@@ -4,7 +4,7 @@ import numpy as np
 import tensorflow as tf
 import keras
 import gym
-
+import timeit
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -19,7 +19,7 @@ class A2C(Reinforce):
     # This class inherits the Reinforce class, so for example, you can reuse
     # generate_episode() here.
 
-    def __init__(self, env, lr, critic_lr, render, n=100):
+    def __init__(self, env, lr, critic_lr, render, n=1000):
         # Initializes A2C.
         # Args:
         # - model: The actor model.
@@ -27,6 +27,7 @@ class A2C(Reinforce):
         # - critic_model: The critic model.
         # - critic_lr: Learning rate for the critic model.
         # - n: The value of N in N-step A2C.
+        self.log = False
         self.render = render
         self.env = env
         self.state_space = env.observation_space.shape[0]
@@ -77,6 +78,9 @@ class A2C(Reinforce):
             bias_initializer=tf.constant_initializer(0),
         )
         self.actor_predict = tf.nn.softmax(layer4)
+        # a_index = tf.stack([tf.range(tf.shape(self.actor_action)[0], dtype=tf.int32), self.actor_action], axis=1)
+        # self.gathered_p = tf.gather_nd(params=self.actor_predict, indices=a_index)
+        # self.logpi = tf.log(self.gathered_p)
         my_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=layer4, labels=self.actor_action)
         loss = tf.reduce_mean(my_loss * self.actor_reward)
         self.actor_train = tf.train.AdamOptimizer(self.lr).minimize(loss)  
@@ -117,60 +121,77 @@ class A2C(Reinforce):
             bias_initializer=tf.constant_initializer(0),
         )
         self.critic_predict = layer4
-        loss = tf.reduce_mean(tf.square(self.critic_r - layer4))
-        # loss = tf.losses.mean_squared_error(labels=self.critic_r, predictions=tf.reshape(layer4,shape=[-1]))
+        # loss = tf.reduce_mean(tf.square(self.critic_r - layer4))
+        loss = tf.losses.mean_squared_error(labels=self.critic_r, predictions=tf.reshape(layer4, shape=[-1]))
         self.critic_train= tf.train.AdamOptimizer(self.critic_lr).minimize(loss)
 
     def train(self, gamma=0.99):
         # Trains the model on a single episode using A2C.
         # TODO: Implement this method. It may be helpful to call the class
         #       method generate_episode() to generate training data.
-        for i in range(self.num_episodes):
-            s = []
-            a = []
-            r = []
-            reward = []
-            for k in range(1):
-                s_t, a_t, r_t = self.generate_episode()
-                s.extend(s_t)
-                a.extend(a_t)
-                r_t = [i/200 for i in r_t] 
+        for counter in range(self.num_episodes):
+            # s = []
+            # a = []
+            # r = []
+            # reward = []
+            # for k in range(1):
+            s, a, r = self.generate_episode()
+            # s.extend(s_t)
+            # a.extend(a_t)
+            r = [item/200 for item in r] 
+            dr = np.zeros_like(r, dtype=np.float32)
+            for i in range(len(r) - 1, -1, -1):
+                for j in range(self.n):
+                    if i + j < len(r):
+                        dr[i] += r[i + j]*(gamma**j)
+                    else:
+                        break
+            # dr = np.zeros_like(r)
+            # for i in range(len(r) - 1, -1, -1):
+            #     if i == len(r) - 1:
+            #         dr[i] = r[i]
+            #         continue
+            #     dr[i] = r[i] + gamma * dr[i + 1]
+            # # dr /= 200
+            # print(dr)
+            # break
+            # r.extend(dr)
+                # tmp = dr-v_t
+                # reward.extend(tmp)
 
-                v_t = self.sess.run(self.critic_predict, feed_dict={self.critic_state: np.reshape(s_t, (-1, self.state_space))})
-                v_t = v_t.flatten()
-                print(v_t)
-                dr = np.zeros_like(r_t)
-                for i in range(len(r_t) - 1, -1, -1):
-                    vend = 0
-                    if i + self.n < len(r_t):
-                        vend = v_t[i]
-                    dr[i] += gamma**self.n*vend
-                    for j in range(self.n):
-                        if i + j < len(r_t):
-                            dr[i] += r_t[i + j]*gamma**j
-                        else:
-                            break
-                r.extend(dr)
-                tmp = dr-v_t
-                reward.extend(tmp)
-
-            if i % 5 == 0:
+            for x in range(6):
+                v = self.sess.run(self.critic_predict, feed_dict={self.critic_state: np.reshape(s, (-1, self.state_space))})
+                v = v.flatten()
+                new_r = np.zeros_like(dr, dtype=np.float32)
+                for y in range(len(dr)):
+                    if self.n + y < len(r):
+                        new_r[y] = dr[y] + gamma**self.n*v[self.n + y]
+                    else:
+                        new_r[y] = dr[y]
+                reward = new_r - v
                 self.sess.run(self.actor_train, feed_dict={
-                    self.actor_state: np.reshape(s,(-1, self.state_space)),
-                    self.actor_action: np.array(a),
-                    self.actor_reward: np.array(reward),
+                    self.actor_state: np.reshape(np.array(s, dtype=np.float32),(-1, self.state_space)),
+                    self.actor_action: np.array(a, dtype=np.float32),
+                    self.actor_reward: np.array(reward, dtype=np.float32),
                 })
-            self.sess.run(self.critic_train, feed_dict={
-                self.critic_state: np.reshape(s,(-1, self.state_space)),
-                self.critic_r: np.array(r),
+                self.sess.run(self.critic_train, feed_dict={
+                    self.critic_state: np.reshape(np.array(s, dtype=np.float32),(-1, self.state_space)),
+                    self.critic_r: new_r,
                 })
-                
-            if i % 100 == 0:
+  
+            if counter % 500 == 0:
+                dt = np.zeros_like(r)
+                for i in range(len(r) - 1, -1, -1):
+                    if i == len(r) - 1:
+                        dt[i] = r[i]
+                        continue
+                    dt[i] = r[i] + gamma * dt[i + 1]
+                # print(v-dt)
                 self.test()
                 # print("monte carlo reward is {}".format(dr))
                 # print("v reward is {}".format(v))
-                print("distance {}".format(np.linalg.norm(v_t-dr)/len(v_t)))
-                self.save()
+                print("distance {}".format(np.linalg.norm(v-dt)))
+                # self.save()
         return 
 
     def generate_episode(self):
@@ -212,9 +233,10 @@ class A2C(Reinforce):
             res.append(reward_tmp)
         print("Test mean reward is {}".format(np.mean(res)))
         print("Test std reward is {}".format(np.std(res)))
-        f = open("./stat","a+") 
-        f.write("mean/std {} ".format(np.mean(res)))
-        f.write("{}\n".format(np.std(res)))
+        if self.log:
+            f = open("./stat","a+") 
+            f.write("mean/std {} ".format(np.mean(res)))
+            f.write("{}\n".format(np.std(res)))
         return
 
 

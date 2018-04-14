@@ -4,22 +4,18 @@ import numpy as np
 import tensorflow as tf
 import keras
 import gym
-import timeit
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from reinforce import Reinforce
 
-np.random.seed(1)
-tf.set_random_seed(1)
-
 class A2C(Reinforce):
     # Implementation of N-step Advantage Actor Critic.
     # This class inherits the Reinforce class, so for example, you can reuse
     # generate_episode() here.
 
-    def __init__(self, env, lr, critic_lr, render, n=1000):
+    def __init__(self, env, lr, critic_lr, render, n=20):
         # Initializes A2C.
         # Args:
         # - model: The actor model.
@@ -27,7 +23,7 @@ class A2C(Reinforce):
         # - critic_model: The critic model.
         # - critic_lr: Learning rate for the critic model.
         # - n: The value of N in N-step A2C.
-        self.log = False
+        self.log = True
         self.render = render
         self.env = env
         self.state_space = env.observation_space.shape[0]
@@ -78,9 +74,6 @@ class A2C(Reinforce):
             bias_initializer=tf.constant_initializer(0),
         )
         self.actor_predict = tf.nn.softmax(layer4)
-        # a_index = tf.stack([tf.range(tf.shape(self.actor_action)[0], dtype=tf.int32), self.actor_action], axis=1)
-        # self.gathered_p = tf.gather_nd(params=self.actor_predict, indices=a_index)
-        # self.logpi = tf.log(self.gathered_p)
         my_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=layer4, labels=self.actor_action)
         loss = tf.reduce_mean(my_loss * self.actor_reward)
         self.actor_train = tf.train.AdamOptimizer(self.lr).minimize(loss)  
@@ -130,14 +123,7 @@ class A2C(Reinforce):
         # TODO: Implement this method. It may be helpful to call the class
         #       method generate_episode() to generate training data.
         for counter in range(self.num_episodes):
-            # s = []
-            # a = []
-            # r = []
-            # reward = []
-            # for k in range(1):
             s, a, r = self.generate_episode()
-            # s.extend(s_t)
-            # a.extend(a_t)
             r = [item/200 for item in r] 
             dr = np.zeros_like(r, dtype=np.float32)
             for i in range(len(r) - 1, -1, -1):
@@ -146,20 +132,7 @@ class A2C(Reinforce):
                         dr[i] += r[i + j]*(gamma**j)
                     else:
                         break
-            # dr = np.zeros_like(r)
-            # for i in range(len(r) - 1, -1, -1):
-            #     if i == len(r) - 1:
-            #         dr[i] = r[i]
-            #         continue
-            #     dr[i] = r[i] + gamma * dr[i + 1]
-            # # dr /= 200
-            # print(dr)
-            # break
-            # r.extend(dr)
-                # tmp = dr-v_t
-                # reward.extend(tmp)
-
-            for x in range(6):
+            for x in range(5):
                 v = self.sess.run(self.critic_predict, feed_dict={self.critic_state: np.reshape(s, (-1, self.state_space))})
                 v = v.flatten()
                 new_r = np.zeros_like(dr, dtype=np.float32)
@@ -180,18 +153,8 @@ class A2C(Reinforce):
                 })
   
             if counter % 500 == 0:
-                dt = np.zeros_like(r)
-                for i in range(len(r) - 1, -1, -1):
-                    if i == len(r) - 1:
-                        dt[i] = r[i]
-                        continue
-                    dt[i] = r[i] + gamma * dt[i + 1]
-                # print(v-dt)
                 self.test()
-                # print("monte carlo reward is {}".format(dr))
-                # print("v reward is {}".format(v))
-                print("distance {}".format(np.linalg.norm(v-dt)))
-                # self.save()
+                self.save()
         return 
 
     def generate_episode(self):
@@ -279,9 +242,8 @@ def main(args):
     render = args.render
 
     # Create the environment.
-    # env = gym.make('LunarLander-v2')
-    env = gym.make('CartPole-v0')
-    env.seed(1) 
+    env = gym.make('LunarLander-v2')
+    # env = gym.make('CartPole-v0')
     # Load the actor model from file.
 
     # TODO: Train the model using A2C and plot the learning curves.

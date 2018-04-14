@@ -34,7 +34,6 @@ class Reinforce(object):
             activation=tf.nn.relu,
             kernel_initializer=tf.keras.initializers.glorot_uniform(),
             bias_initializer=tf.constant_initializer(0),
-            name='l1'
         )
 
         layer2 = tf.layers.dense(
@@ -43,7 +42,6 @@ class Reinforce(object):
             activation=tf.nn.relu,
             kernel_initializer=tf.keras.initializers.glorot_uniform(),
             bias_initializer=tf.constant_initializer(0),
-            name='l2'
         )
 
         layer3 = tf.layers.dense(
@@ -52,7 +50,6 @@ class Reinforce(object):
             activation=tf.nn.relu,
             kernel_initializer=tf.keras.initializers.glorot_uniform(),
             bias_initializer=tf.constant_initializer(0),
-            name='l3'
         )
 
         layer4 = tf.layers.dense(
@@ -61,7 +58,6 @@ class Reinforce(object):
             activation=None,
             kernel_initializer=tf.keras.initializers.glorot_uniform(),
             bias_initializer=tf.constant_initializer(0),
-            name='l4'
         )
         self.predict = tf.nn.softmax(layer4)
         my_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=layer4, labels=self.tf_action)
